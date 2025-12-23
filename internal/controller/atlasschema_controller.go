@@ -173,8 +173,6 @@ func (r *AtlasSchemaReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if err != nil {
 		return r.resultErr(res, err, dbv1alpha1.ReasonCreatingAtlasClient)
 	}
-	cli.SetStdout(&SchemaChangePlanner{Level: "INFO"})
-	cli.SetStderr(&SchemaChangePlanner{Level: "ERROR"})
 	// Calculate the hash of the current schema.
 	hash, err := cli.SchemaInspect(ctx, &atlasexec.SchemaInspectParams{
 		Env:    data.EnvName,
@@ -365,7 +363,6 @@ func (r *AtlasSchemaReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}); err != nil {
 			return r.resultErr(res, err, "ModifyingAtlasHCL")
 		}
-		GChangePlanner.Describe(fmt.Sprintf("[Init]dryRun=%v", res.Spec.DryRun))
 		reports, err = cli.SchemaApplySlice(ctx, &atlasexec.SchemaApplyParams{
 			Env:         data.EnvName,
 			To:          desiredURL,
@@ -376,7 +373,6 @@ func (r *AtlasSchemaReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		})
 	// Run the linting policy.
 	case shouldLint:
-		GChangePlanner.Describe(fmt.Sprintf("[lint]dryRun=%v", res.Spec.DryRun))
 		if err = r.lint(ctx, wd, data, nil); err != nil {
 			return r.resultCLIErr(res, err, "LintPolicyError")
 		}
@@ -390,7 +386,6 @@ func (r *AtlasSchemaReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		})
 	// No linting policy is set.
 	default:
-		GChangePlanner.Describe(fmt.Sprintf("[DefaultUpdateSchema]dryRun=%v", res.Spec.DryRun))
 		reports, err = cli.SchemaApplySlice(ctx, &atlasexec.SchemaApplyParams{
 			Env:         data.EnvName,
 			To:          desiredURL,
@@ -410,8 +405,7 @@ func (r *AtlasSchemaReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if len(reports) != 1 {
 		return r.resultErr(res, fmt.Errorf("unexpected number of reports: %d", len(reports)), "ApplyingSchema")
 	}
-	GChangePlanner.DescribeEx(reports[0].Changes)
-	log.Info("schema changes are applied", "applied", len(reports[0].Changes.Applied))
+	GChangePlanner.DescribeEx(reports[0])
 	// Truncate the applied and pending changes to 1024 bytes.
 	reports[0].Changes.Applied = truncateSQL(reports[0].Changes.Applied, sqlLimitSize)
 	reports[0].Changes.Pending = truncateSQL(reports[0].Changes.Pending, sqlLimitSize)
@@ -420,6 +414,13 @@ func (r *AtlasSchemaReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		s.PlanLink = p.File.Link
 		s.PlanURL = p.File.URL
 	}
+	if res.Spec.DryRun {
+		res.Status.PendingChanges = reports[0].Changes.Pending
+		res.SetNotReady("DryRun", "WaitForCheckout")
+		r.recorder.Event(res, corev1.EventTypeNormal, "DryRun", "DryRun schema")
+		return ctrl.Result{}, nil
+	}
+	log.Info("schema changes are applied", "applied", len(reports[0].Changes.Applied))
 	// Clear the reports and plan from the status.
 	reports[0].Plan, reports[0].Applied = nil, nil
 	res.SetReady(s, reports[0])

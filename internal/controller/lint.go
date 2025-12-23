@@ -38,8 +38,6 @@ func (r *AtlasSchemaReconciler) lint(ctx context.Context, wd *atlasexec.WorkingD
 	if err != nil {
 		return err
 	}
-	cli.SetStdout(&SchemaChangePlanner{Level: "INFO"})
-	cli.SetStderr(&SchemaChangePlanner{Level: "ERROR"})
 
 	plans, err := cli.SchemaApplySlice(ctx, &atlasexec.SchemaApplyParams{
 		Env:    data.EnvName,

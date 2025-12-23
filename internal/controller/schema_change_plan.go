@@ -1,3 +1,17 @@
+// Copyright 2025 The Atlas Operator Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package controller
 
 import (
@@ -5,7 +19,6 @@ import (
 	"encoding/json"
 	"log"
 	"os"
-	"reflect"
 )
 
 func init() {
@@ -20,29 +33,19 @@ var (
 	GChangePlanner = &SchemaChangePlanner{Level: "INFO"}
 )
 
-func (s *SchemaChangePlanner) Describe(data interface{}) {
-	strData := ""
-	if reflect.TypeOf(data) == reflect.TypeOf("") {
-		strData = data.(string)
-	} else {
-		jsonData, err := json.Marshal(data)
-		if err != nil {
-			return
-		}
-		strData = string(jsonData)
+func (s *SchemaChangePlanner) DescribeEx(schemaApply *atlasexec.SchemaApply) {
+
+	type DBChange struct {
+		Database string `json:"database"`
+		Changes  atlasexec.Changes
 	}
-	vData := []byte(strData)
-	s.Write(vData)
-}
 
-func (s *SchemaChangePlanner) DescribeEx(changes atlasexec.Changes) {
-	strData, _ := json.MarshalIndent(changes, "", "  ")
-	s.Write(strData)
-}
-
-func (s *SchemaChangePlanner) Write(p []byte) (n int, err error) {
+	change := DBChange{
+		Database: schemaApply.URL.Schema,
+		Changes:  schemaApply.Changes,
+	}
+	strData, _ := json.MarshalIndent(change, "", "  ")
 	log.Printf("====================SchemaPlan[%s]-Start======================", s.Level)
-	log.Printf("%s", string(p))
+	log.Printf("\n%s", string(strData))
 	log.Printf("====================SchemaPlan[%s]-End========================", s.Level)
-	return len(p), nil
 }

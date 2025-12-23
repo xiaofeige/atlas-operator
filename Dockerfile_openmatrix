@@ -1,0 +1,16 @@
+FROM centos:7
+
+USER admin
+
+RUN mkdir -p /home/admin/bin
+WORKDIR /home/admin
+
+COPY ./atlas-manager /home/admin/bin/atlas-manager
+COPY ./atlas-linux-amd64-latest /home/admin/bin/atlas
+
+RUN sudo chmod +x /home/admin/bin/atlas
+RUN sudo chmod +x /home/admin/bin/atlas-manager
+ENV ATLAS_KUBERNETES_OPERATOR=1
+ENV PATH=$PATH:/home/admin/bin
+
+WORKDIR /home/admin/bin

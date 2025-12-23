@@ -71,6 +71,10 @@ type (
 		// Failed is the number of times the schema has failed to apply.
 		// +kubebuilder:default=0
 		Failed int `json:"failed"`
+
+		// PendingChanges is a list of changes that are pending to be applied.
+		// +optional
+		PendingChanges []string `json:"pendingChanges"`
 	}
 	// AtlasSchemaSpec defines the desired state of AtlasSchema
 	AtlasSchemaSpec struct {
