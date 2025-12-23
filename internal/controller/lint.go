@@ -38,6 +38,9 @@ func (r *AtlasSchemaReconciler) lint(ctx context.Context, wd *atlasexec.WorkingD
 	if err != nil {
 		return err
 	}
+	cli.SetStdout(&SchemaChangePlanner{Level: "INFO"})
+	cli.SetStderr(&SchemaChangePlanner{Level: "ERROR"})
+
 	plans, err := cli.SchemaApplySlice(ctx, &atlasexec.SchemaApplyParams{
 		Env:    data.EnvName,
 		Vars:   vars,
@@ -45,6 +48,8 @@ func (r *AtlasSchemaReconciler) lint(ctx context.Context, wd *atlasexec.WorkingD
 		DryRun: true, // Dry run to get pending changes.
 	})
 	if err != nil {
+		log.FromContext(ctx).Error(err,
+			"unable to SchemaApplySlice")
 		return err
 	}
 	defer func() {
@@ -57,6 +62,11 @@ func (r *AtlasSchemaReconciler) lint(ctx context.Context, wd *atlasexec.WorkingD
 	if len(plans) != 1 {
 		return fmt.Errorf("unexpected number of schema plans: %d", len(plans))
 	}
+
+	if data.DryRun {
+		return nil
+	}
+
 	var causes []string
 	for _, c := range plans[0].Changes.Pending {
 		if strings.Contains(c, "DROP ") {

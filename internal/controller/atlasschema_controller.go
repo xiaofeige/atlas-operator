@@ -42,7 +42,6 @@ import (
 	"github.com/ariga/atlas-operator/internal/controller/watch"
 	"github.com/hashicorp/hcl/v2/hclwrite"
 	"github.com/zclconf/go-cty/cty"
-	"os"
 )
 
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=create;update;delete;get;list;watch;create;update;patch;delete
@@ -80,6 +79,7 @@ type (
 		Config  *hclwrite.File
 		Vars    atlasexec.Vars2
 		schema  []byte
+		DryRun  bool
 	}
 )
 
@@ -100,7 +100,7 @@ func NewAtlasSchemaReconciler(mgr Manager, prewarmDevDB bool) *AtlasSchemaReconc
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
-func (r *AtlasSchemaReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, err error) {
+func (r *AtlasSchemaReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	var (
 		log = log.FromContext(ctx)
 		res = &dbv1alpha1.AtlasSchema{}
@@ -173,8 +173,8 @@ func (r *AtlasSchemaReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if err != nil {
 		return r.resultErr(res, err, dbv1alpha1.ReasonCreatingAtlasClient)
 	}
-	cli.SetStdout(os.Stdout)
-	cli.SetStderr(os.Stdout)
+	cli.SetStdout(&SchemaChangePlanner{Level: "INFO"})
+	cli.SetStderr(&SchemaChangePlanner{Level: "ERROR"})
 	// Calculate the hash of the current schema.
 	hash, err := cli.SchemaInspect(ctx, &atlasexec.SchemaInspectParams{
 		Env:    data.EnvName,
@@ -183,6 +183,7 @@ func (r *AtlasSchemaReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		Vars:   data.Vars,
 	})
 	if err != nil {
+		log.Error(err, "schemaInspect error")
 		return r.resultErr(res, err, "CalculatingHash")
 	}
 	// We need to update the ready condition immediately before doing
@@ -364,6 +365,7 @@ func (r *AtlasSchemaReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}); err != nil {
 			return r.resultErr(res, err, "ModifyingAtlasHCL")
 		}
+		GChangePlanner.Describe(fmt.Sprintf("[Init]dryRun=%v", res.Spec.DryRun))
 		reports, err = cli.SchemaApplySlice(ctx, &atlasexec.SchemaApplyParams{
 			Env:         data.EnvName,
 			To:          desiredURL,
@@ -374,6 +376,7 @@ func (r *AtlasSchemaReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		})
 	// Run the linting policy.
 	case shouldLint:
+		GChangePlanner.Describe(fmt.Sprintf("[lint]dryRun=%v", res.Spec.DryRun))
 		if err = r.lint(ctx, wd, data, nil); err != nil {
 			return r.resultCLIErr(res, err, "LintPolicyError")
 		}
@@ -387,6 +390,7 @@ func (r *AtlasSchemaReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		})
 	// No linting policy is set.
 	default:
+		GChangePlanner.Describe(fmt.Sprintf("[DefaultUpdateSchema]dryRun=%v", res.Spec.DryRun))
 		reports, err = cli.SchemaApplySlice(ctx, &atlasexec.SchemaApplyParams{
 			Env:         data.EnvName,
 			To:          desiredURL,
@@ -406,6 +410,7 @@ func (r *AtlasSchemaReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if len(reports) != 1 {
 		return r.resultErr(res, fmt.Errorf("unexpected number of reports: %d", len(reports)), "ApplyingSchema")
 	}
+	GChangePlanner.DescribeEx(reports[0].Changes)
 	log.Info("schema changes are applied", "applied", len(reports[0].Changes.Applied))
 	// Truncate the applied and pending changes to 1024 bytes.
 	reports[0].Changes.Applied = truncateSQL(reports[0].Changes.Applied, sqlLimitSize)
@@ -487,6 +492,7 @@ func (r *AtlasSchemaReconciler) extractData(ctx context.Context, res *dbv1alpha1
 			Exclude: s.Exclude,
 			Policy:  s.Policy,
 			TxMode:  s.TxMode,
+			DryRun:  res.Spec.DryRun,
 		}
 	)
 	data.Config, err = s.GetConfig(ctx, r, res.Namespace)
