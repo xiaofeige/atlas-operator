@@ -42,6 +42,7 @@ import (
 	"github.com/ariga/atlas-operator/internal/controller/watch"
 	"github.com/hashicorp/hcl/v2/hclwrite"
 	"github.com/zclconf/go-cty/cty"
+	"os"
 )
 
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=create;update;delete;get;list;watch;create;update;patch;delete
@@ -172,6 +173,8 @@ func (r *AtlasSchemaReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if err != nil {
 		return r.resultErr(res, err, dbv1alpha1.ReasonCreatingAtlasClient)
 	}
+	cli.SetStdout(os.Stdout)
+	cli.SetStderr(os.Stdout)
 	// Calculate the hash of the current schema.
 	hash, err := cli.SchemaInspect(ctx, &atlasexec.SchemaInspectParams{
 		Env:    data.EnvName,
@@ -367,6 +370,7 @@ func (r *AtlasSchemaReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			TxMode:      string(data.TxMode),
 			AutoApprove: true,
 			Vars:        data.Vars,
+			DryRun:      res.Spec.DryRun,
 		})
 	// Run the linting policy.
 	case shouldLint:
@@ -379,6 +383,7 @@ func (r *AtlasSchemaReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			TxMode:      string(data.TxMode),
 			AutoApprove: true,
 			Vars:        data.Vars,
+			DryRun:      res.Spec.DryRun,
 		})
 	// No linting policy is set.
 	default:
@@ -388,6 +393,7 @@ func (r *AtlasSchemaReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			TxMode:      string(data.TxMode),
 			AutoApprove: true,
 			Vars:        data.Vars,
+			DryRun:      res.Spec.DryRun,
 		})
 	}
 	if err != nil {
